@@ -3,8 +3,46 @@
 # Variables
 NETBOX_DB_USER="netbox"
 NETBOX_DIR="/opt/netbox"
-ALLOWED_HOSTS="['*']"  # Modify with your specific hostnames/IPs if needed
 PASSWORD_FILE="/opt/netbox/netbox_credentials.txt"
+
+# Function to get the system's IP address
+get_ip_address() {
+  hostname -I | awk '{print $1}'
+}
+
+# Function to get the system's hostname
+get_hostname() {
+  hostname
+}
+
+# Function to perform DNS query for hostname (forward lookup)
+get_dns_from_ip() {
+  dig +short $(get_ip_address)
+}
+
+# Function to perform reverse DNS lookup for IP (PTR record)
+get_reverse_dns() {
+  dig -x $(get_ip_address) +short
+}
+
+# Fetch IP address, hostname, and DNS info
+ip_address=$(get_ip_address)
+hostname=$(get_hostname)
+dns_forward=$(get_dns_from_ip)
+reverse_dns=$(get_reverse_dns)
+
+# Create ALLOWED_HOSTS array based on IP, hostname, and DNS info
+ALLOWED_HOSTS="['$ip_address', '$hostname'"
+
+if [ -n "$dns_forward" ]; then
+  ALLOWED_HOSTS="$ALLOWED_HOSTS, '$dns_forward'"
+fi
+
+if [ -n "$reverse_dns" ]; then
+  ALLOWED_HOSTS="$ALLOWED_HOSTS, '$reverse_dns'"
+fi
+
+ALLOWED_HOSTS="$ALLOWED_HOSTS]"
 
 # Function to list available NetBox versions from GitHub
 list_versions() {
@@ -37,7 +75,7 @@ sudo apt -y upgrade
 
 # Install required packages
 sudo apt install -y postgresql redis-server python3 python3-pip python3-venv python3-dev \
-  build-essential libxml2-dev libxslt1-dev libffi-dev libpq-dev libssl-dev zlib1g-dev git nginx
+  build-essential libxml2-dev libxslt1-dev libffi-dev libpq-dev libssl-dev zlib1g-dev git nginx dnsutils
 
 # Setup PostgreSQL database
 sudo -u postgres psql << EOF
@@ -77,7 +115,7 @@ pip install -r /opt/netbox/requirements.txt
 cd /opt/netbox/netbox/netbox/
 sudo cp configuration_example.py configuration.py
 
-# Modify configuration.py
+# Modify configuration.py with the detected ALLOWED_HOSTS
 sudo sed -i "s/ALLOWED_HOSTS = \[\]/ALLOWED_HOSTS = $ALLOWED_HOSTS/" configuration.py
 sudo sed -i "s/'USER': 'netbox',/'USER': '$NETBOX_DB_USER',/" configuration.py
 sudo sed -i "s/'PASSWORD': ''/'PASSWORD': '$NETBOX_DB_PASSWORD'/" configuration.py
